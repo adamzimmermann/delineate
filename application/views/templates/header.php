@@ -22,8 +22,10 @@
 		
 		<div id="menu" class="btn-toolbar">
 			<div class="btn-group">
-				<a class="btn" href="/fillups/list">List Fillups</a>
-				<a class="btn" href="/fillups/add">Add Fillup</a>
+				<a class="btn" href="/fillups/list">All Fillups</a>
+				<a class="btn" href="/fillups/list/0">Honda Accord</a>
+				<a class="btn" href="/fillups/list/1">Buick Lesabre</a>
+				<a class="btn" href="/fillups/list/2">Buick Century</a>
 				
 			</div>	
 		</div>
