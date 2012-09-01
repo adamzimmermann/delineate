@@ -1,0 +1,114 @@
+<?php
+
+/**
+ * Implements .
+ */
+function computed_field_field_fillup_cost_compute(&$entity_field, $entity_type, $entity, $field, $instance, $langcode, $items) {
+  $entity_field[0]['value'] = array_pop(array_pop(field_get_items($entity_type, $entity, 'field_fillup_price'))) * array_pop(array_pop(field_get_items($entity_type, $entity, 'field_fillup_gallons')));
+}
+
+function computed_field_field_fillup_cost_display($field, $entity_field_item, $entity_lang, $langcode) {
+  $display_output = money_format('$%.2n', $entity_field_item['value']);
+  return $display_output;
+}
+
+
+function delineate_cron() {
+
+  // Get email credentials.
+  include('delineate.creds.inc');
+
+  // Try to connect.
+  $inbox = imap_open($hostname,$username,$password) or die('Cannot connect to Gmail: ' . imap_last_error());
+
+  // Get email.
+  $emails = imap_search($inbox,'NEW');
+
+  /* if emails are returned, cycle through each... */
+  if($emails) {
+    
+    //puts oldest emails first
+    //sort($emails);
+    
+    //testing
+    //rsort($emails);
+    
+    $index = 0;
+    
+    //loops through emails
+    foreach($emails as $email_number) {
+
+      dsm($emails);
+      
+      // Get mileage, price, and gallons
+      $message = explode(' ', trim(imap_fetchbody($inbox,$email_number,2)));
+      $mileage = strip_tags($message[0]);
+      $price = strip_tags($message[1]);
+      $gallons = strip_tags($message[2]);
+        
+      // Get time
+      $overview = imap_fetch_overview($inbox,$email_number,0);
+      $datetime = strtotime($overview[0]->date);
+      $date = date('Y-m-d H:i:s', $datetime);
+
+      // Get sender information
+      $header = imap_headerinfo($inbox, $email_number);
+      $sender = strip_tags($header->from[0]->mailbox);
+
+      dsm($header);
+
+      // Get uid.
+      $query = new EntityFieldQuery();
+
+      $query->entityCondition('entity_type', 'user')
+        // ->entityCondition('bundle', 'article')
+        // ->propertyCondition('status', 1)
+        // ->fieldCondition('field_news_types', 'value', 'spotlight', '=')
+        // ->fieldCondition('field_photo', 'fid', 'NULL', '!=')
+        // ->fieldCondition('field_faculty_tag', 'tid', $value)
+        // ->fieldCondition('field_news_publishdate', 'value', $year. '%', 'like')
+        // ->range(0, 10)
+        ->addMetaData('account', user_load(1)); // Run the query as user 1.
+
+      $result = $query->execute();
+      dsm($result);
+
+      // if (isset($result['node'])) {
+      //   $news_items_nids = array_keys($result['node']);
+      //   $news_items = entity_load('node', $news_items_nids);
+      // }
+
+    
+
+
+
+      // Create node.
+
+
+      // Save node.  
+      // node_save($node);
+
+      // Send email verification.
+    }
+  }
+
+  /* close the connection */
+  imap_close($inbox);
+}
+
+/*
+
+  <?php print date('n/j/Y', strtotime($fillup->date)); ?></td>
+  
+  <td><?php print $fillup->mpg; ?></td>
+  
+  <td><?php print money_format('%.2n', $fillup->price); ?></td>
+  
+  <td><?php print number_format($fillup->gallons, 1); ?></td>
+  
+  <td><?php print money_format('%.2n', $fillup->cost); ?></td>
+  
+  <td><?php print number_format(round($fillup->mileage, 0)); ?></td>
+
+*/
+

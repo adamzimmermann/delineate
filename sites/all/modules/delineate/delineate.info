@@ -1,0 +1,8 @@
+name = Delineate
+description = Provides custom functionality for the Delineate web application.
+core = 7.x
+package = Fields
+files[]=delineate.install
+files[]=delineate.module
+
+core = "7.x"
