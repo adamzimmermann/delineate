@@ -1,6 +1,50 @@
 <?php
 
 /**
+ * Implements hook_menu.
+ */
+function delineate_menu($items) {
+  $items['cron'] = array(
+    'page callback' => 'delineate_cron',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  
+  // $items['import'] = array(
+  //   'page callback' => 'delineate_import',
+  //   'access callback' => TRUE,
+  //   'type' => MENU_CALLBACK,
+  // );
+  
+  $items['recalculate'] = array(
+    'page callback' => 'delineate_calculate_mpg',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+
+
+function delineate_menu_alter($items) {
+  $items['node/%node']['access callback'] = 'delineate_node_access';
+}
+
+function delineate_node_access($op, $node) {
+  dsm($op);
+  dsm($node);
+  if ($special_case) {
+    return FALSE;
+  }
+  elseif ($special_case_2) {
+    return TRUE;
+  }
+  // Default, let Drupal handle it.
+  return node_access($op, $node);
+}
+
+
+/**
  * Fillup cost value function.
  */
 function computed_field_field_fillup_cost_compute(&$entity_field, $entity_type, $entity, $field, $instance, $langcode, $items) {
@@ -18,64 +62,120 @@ function computed_field_field_fillup_cost_display($field, $entity_field_item, $e
 
 
 /**
- * Fillup MPG value function.
+ * Implements hook_node_presave.
  */
-function computed_field_field_fillup_mpg_compute(&$entity_field, $entity_type, $entity, $field, $instance, $langcode, $items) {
+function delineate_node_presave($node) {
 
+  if ($node->type == 'fillup') {
+    delineate_calculate_fillup_fields($node);
+  }
+}
+
+
+
+/**
+ * Find the last fillup for a given vehicle
+ *  @param
+ *    vehicle node
+ *  @return
+ *    fillup node
+ */
+function delineate_vehicle_previous_fillup($node) {
+  // Find the previous fillup.
   $query = new EntityFieldQuery();
   $query->entityCondition('entity_type', 'node')
     ->entityCondition('bundle', 'fillup')
-    ->fieldCondition('field_fillup_vehicle', 'target_id', $entity->uid, '=')
-    // ->entityOrderBy('bundle', 'DESC')
-    ->fieldOrderBy('field_fillup_date', 'value', 'ASC') 
+    ->fieldCondition('field_fillup_vehicle', 'target_id', $node->nid, '=')
+    ->fieldOrderBy('field_fillup_date', 'value', 'DESC')
     ->range(0, 1)
-    ->addMetaData('account', user_load(1)); // Run the query as user 1.
-
+    ->addMetaData('account', user_load(1));
   $result = $query->execute();
-  dsm($result);
 
+  // Previous fillup found.
   if (isset($result['node'])) {
-    $fillup = node_load('node', $result['node'][0]);
-    $mileage_previous = array_pop(array_pop(field_get_items($entity_type, $fillup, 'field_fillup_mileage'))); 
-    $mileage_current = array_pop(array_pop(field_get_items($entity_type, $entity, 'field_fillup_mileage')));
-    $gallons = array_pop(array_pop(field_get_items($entity_type, $entity, 'field_fillup_gallons')));
-
-    $mpg =  ($mileage_current - $mileage_previous) / $gallons;
+    $previous_fillup = array_pop($result['node']);
+    return node_load($previous_fillup->nid);
   }
   else {
-    $mpg = NULL;
+    return FALSE;
   }
-
-  $entity_field[0]['value'] = $mpg;
 }
 
-/**
- * Fillup MPG display function.
- */
-function computed_field_field_fillup_mpg_display($field, $entity_field_item, $entity_lang, $langcode) {
-  $display_output = round($entity_field_item['value'], 1);
-  return $display_output;
-}
 
 
 /**
- * Implements hook_menu.
+ * Find the previous fillup to the current fillup.
+ *  @param
+ *    fillup node
+ *  @return
+ *    fillup node
  */
-function delineate_menu() {
-  $items['cron'] = array(
-    'page callback' => 'delineate_cron',
-    'access callback' => TRUE,
-    'type' => 'MENU_CALLBACK',
-  );
+function delineate_fillup_previous_fillup($node) {
   
-  // $items['import'] = array(
-  //   'page callback' => 'delineate_import',
-  //   'access callback' => TRUE,
-  //   'type' => MENU_CALLBACK,
-  // );
-  
-  return $items;
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'fillup')
+    ->fieldCondition('field_fillup_vehicle', 'target_id', $node->field_fillup_vehicle['und'][0]['target_id'], '=')
+    ->fieldCondition('field_fillup_date', 'value', $node->field_fillup_date['und'][0]['value'], '<')
+    ->fieldOrderBy('field_fillup_date', 'value', 'DESC')
+    ->range(0, 1)
+    ->addMetaData('account', user_load(1));
+  $result = $query->execute();
+
+  // Previous fillup found.
+  if (isset($result['node'])) {
+    $previous_fillup = array_pop($result['node']);
+    return node_load($previous_fillup->nid);
+  }
+  else {
+    return FALSE;
+  }
 }
+
+
+
+
+
+
+/**
+ * Calculate dynamic fillup fields on node save.
+ *  @param
+ *    a fillup node
+ *
+ */
+function delineate_calculate_fillup_fields(&$node) {
+
+  // Previous fillup found.
+  if ($previous_fillup = delineate_fillup_previous_fillup($node)) {
+
+    // Get the values needed for the calculations.
+    $mileage_previous = $previous_fillup->field_fillup_mileage['und'][0]['value'];
+    $mileage_current = $node->field_fillup_mileage['und'][0]['value'];
+    $gallons = $node->field_fillup_gallons['und'][0]['value'];
+
+    // Calculate miles since last fillup.
+    $miles = $mileage_current - $mileage_previous;
+
+    // Calculate MPG since last fillup.
+    $mpg = $miles / $gallons;
+    if ($mpg > 50 || $mpg < 10) {
+      $mpg = 0;
+    }
+
+    // Calculate days since last fillup.
+    $date_current = new DateTime(date(DateTime::ISO8601 , $node->field_fillup_date['und'][0]['value']));
+    $date_previous = new DateTime(date(DateTime::ISO8601 , $previous_fillup->field_fillup_date['und'][0]['value']));
+    $difference = $date_current->diff($date_previous);
+    $days = $difference->d;
+
+    // Assign the values.
+    $node->field_fillup_miles['und'][0]['value'] = $miles;
+    $node->field_fillup_mpg['und'][0]['value'] = $mpg;
+    $node->field_fillup_days['und'][0]['value'] = $days;
+  } 
+}
+
+
 
 /**
  * Callback function for /import.
@@ -168,23 +268,173 @@ function delineate_create_fillup($fillup) {
 }
 
 
-function delineate_vehicle_calculate_mpg($vehicle) {
 
-  //get all fillups for a vehicle
-  $this->db->order_by("date", "asc");
-  $query = $this->db->get_where('fillup', array('vehicle_ID'=> $vehicle_ID));
-  $fillups = $query->result_array();
+ /*
+  * Recalculate dynamic fields for all fillups.
+  *
+  */
+function delineate_calculate_mpg() {
 
+  // Find all vehicle nodes.
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'vehicle')
+    ->propertyCondition('status', 1)
+    ->addMetaData('account', user_load(1));
+  $result = $query->execute();
 
-    for($i=0; $i<count($fillups); $i++) {
+  // Check if results were found.
+  if (isset($result['node'])) {
 
-      $fillups[$i]['mpg'] =  ($fillups[$i]['mileage'] - $fillups[$i-1]['mileage']) / $fillups[$i]['gallons'];
-
-      $this->db->where('ID', $fillups[$i]['ID']);
-      $this->db->update('fillup', $fillups[$i]);    
+    // Create an array of nids and load them.
+    $nids = array_keys($result['node']);
+    $nodes = entity_load('node', $nids);
+    
+    // Loop through all the nodes.
+    foreach ($nodes as $node) {
+      $node = node_load($node->nid);
+      delineate_calculate_mpg_vehicle($node);
     }
+  }
 }
 
+
+
+
+
+ /*
+  * Recalculate dynamic fields on all fillups for a given vehicle.
+  *
+  */
+function delineate_calculate_mpg_vehicle($node) {
+
+  // Check if results were found.
+  if ($fillups = delineate_vehicle_fillups($node)) {
+    foreach ($fillups as $fillup) {
+      node_save($fillup);
+    }
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function delineate_vehicle_average_mpg($node) {
+  // Get all Fillups.
+  $fillups = delineate_vehicle_fillups($node);
+  
+  // Create an array of thier mpg values.
+  if (count($fillups) > 0) {
+    foreach ($fillups as $fillup) {
+      $mpg[] = $fillup->field_fillup_mpg['und'][0]['value'];
+    }
+    // Calculate the average.
+    return array_sum($mpg) / count($mpg);
+  }
+  else {
+    return FALSE;
+  }
+
+}
+
+
+// Find all fillup nodes for the vehicle.
+function delineate_vehicle_fillups($node) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'fillup')
+    ->fieldCondition('field_fillup_vehicle', 'target_id', $node->nid, '=')
+    ->fieldCondition('field_fillup_mpg', 'value', 0, '!=')
+    ->propertyCondition('status', 1)
+    ->addMetaData('account', user_load(1));
+  $result = $query->execute();
+
+  // Check if results were found.
+  if (isset($result['node'])) {
+
+    // Create an array of nids and load them.
+    $nids = array_keys($result['node']);
+    return entity_load('node', $nids);
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function delineate_field_formatter_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items, $displays) {
+  dsm('show up please');
+  dsm($entity_type);
+  dsm($entities);
+  dsm($field);
+  dsm($instances);
+  dsm($items);
+}
+
+function delineate_node_view($node, $view_mode, $langcode) {
+
+  dsm('in node_view');
+  dsm($node);
+
+  // Calculate time sensitive fields for vehicle nodes.
+  if ($node->type == 'vehicle') {
+    
+    // Set the nid of the oil change Maintenance type.
+    $oil_change_nid = 479;
+
+    // Calculate the current mileage on the vehicle and averate mpg if fillups exist for it.
+    if ($previous_fillup = delineate_vehicle_previous_fillup($node)) {
+      
+      // Find the current mileage.
+      $current_mileage = $previous_fillup->field_fillup_mileage['und'][0]['value'];
+
+      // Calculate the average mpg for the vehicle.
+      $average_mpg = delineate_vehicle_average_mpg($node);
+
+      // Save average mpg and current mileage fields.
+      $node->field_vehicle_mileage['und'][0]['value'] = $current_mileage;
+      $node->field_vehicle_average_mpg['und'][0]['value'] = $average_mpg;
+    }
+
+    // Find the last oil change
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'maintenance')
+      ->fieldCondition('field_maintenance_vehicle', 'target_id', $node->nid, '=')
+      ->fieldCondition('field_maintenance_type', 'target_id', $oil_change_nid, '=')
+      ->fieldOrderBy('field_maintenance_date', 'value', 'DESC')
+      ->range(0, 1)
+      ->addMetaData('account', user_load(1));
+    $result = $query->execute();
+
+    // Check if a previous oil change was found.
+    if (isset($result['node'])) {
+      $previous_maintenance = array_pop($result['node']);
+      $previous_maintenance = node_load($previous_maintenance->nid);
+
+      // Calculate time since last oil change.
+      $current_date = new DateTime();
+      $previous_maintenance_date = new DateTime($previous_maintenance->field_maintenance_date['und'][0]['value']);
+      $interval = $current_date->diff($previous_maintenance_date);
+      $time_oil_change = $interval->format('%a');
+
+      // Calculate miles since last oil change.
+      $previous_maintenance_mileage = $previous_maintenance->field_maintenance_mileage['und'][0]['value'];
+      $miles_oil_change = $current_mileage - $previous_maintenance_mileage;
+      
+      // Save time since last oil change information.
+      $node->field_time_oil_change['und'][0]['value'] = $time_oil_change;
+      $node->field_miles_oil_change['und'][0]['value'] = $miles_oil_change;
+    }
+
+    // Save the node.
+    node_save($node);
+  }
+}
+
+
+function delineate_vehicle_previous_oilchange($node) {
+
+}
 
 
 function delineate_cron() {
@@ -266,7 +516,7 @@ function delineate_cron() {
     // close the connection 
     // imap_close($inbox);
   }
-  */
+*/
 }
 
 /*
