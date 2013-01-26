@@ -27,20 +27,20 @@ function delineate_menu($items) {
 
 
 function delineate_menu_alter($items) {
-  $items['node/%node']['access callback'] = 'delineate_node_access';
+  // $items['node/%']['access callback'] = 'delineate_node_access';
 }
 
 function delineate_node_access($op, $node) {
-  dsm($op);
-  dsm($node);
-  if ($special_case) {
-    return FALSE;
-  }
-  elseif ($special_case_2) {
-    return TRUE;
-  }
-  // Default, let Drupal handle it.
-  return node_access($op, $node);
+  // dsm($op);
+  // dsm($node);
+  // if ($special_case) {
+  //   return FALSE;
+  // }
+  // elseif ($special_case_2) {
+  //   return TRUE;
+  // }
+  // // Default, let Drupal handle it.
+  // return node_access($op, $node);
 }
 
 
