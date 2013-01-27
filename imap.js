@@ -2,25 +2,25 @@
 function checkMail() {
 	
 	xmlHttp = new XMLHttpRequest();
-	xmlHttp.onreadystatechange = function() {
-		if(xmlHttp.readyState == 4) {
+	// xmlHttp.onreadystatechange = function() {
+	// 	if (xmlHttp.readyState == 4) {
 			
-			var response = xmlHttp.responseText;
+	// 		var response = xmlHttp.responseText;
 			
-			console.log('RESPONSE: ' + response)
+	// 		console.log('RESPONSE: ' + response)
 			
-			if(response == 'false') {
-				console.log('STATUS: no new fillup information');
-			}
-			else if(response == 'other') {
-				console.log('STATUS: information found for other vehicles');
-			}
-			else {
-				console.log('STATUS: new fillups found!');
-				updateTable(response);
-			}
-		}
-	};
+	// 		if (response == 'false') {
+	// 			console.log('STATUS: no new fillup information');
+	// 		}
+	// 		else if (response == 'other') {
+	// 			console.log('STATUS: information found for other vehicles');
+	// 		}
+	// 		else {
+	// 			console.log('STATUS: new fillups found!');
+	// 			updateTable(response);
+	// 		}
+	// 	}
+	// };
 	var href = window.location.pathname	
 	xmlHttp.open("GET", "/fillups/update/" + href.substr(href.lastIndexOf('/') + 1), true);
 	xmlHttp.send();
@@ -30,7 +30,7 @@ function checkMail() {
 function updateTable(input) {
 	var data = JSON.parse(input);
 	
-	for(var key in data) {
+	for (var key in data) {
 		
 		console.log('USER ID: ' + data[key].user_ID);
 		
@@ -60,6 +60,6 @@ function tableCell(string) {
 
 
 //checks for new mail every 5 seconds
-setInterval("checkMail()", 5000);
+setInterval("checkMail()", 10000);
 
 console.log('STATUS: live data started');

@@ -33,7 +33,7 @@ class Fillups extends CI_Controller {
 		
 		
 	
-		if($vehicle !== 'FALSE') {
+		if ($vehicle !== 'FALSE') {
 			$this->fillup_model->calculateMPG($vehicle);
 			$data['title'] = 'Fillups for the ' . $vehicle;
 		}	
@@ -147,13 +147,13 @@ class Fillups extends CI_Controller {
 		/* grab emails */
 		$emails = imap_search($inbox,'UNSEEN');
 		
-		
+		print_r($emails);
 		
 		/* if emails are returned, cycle through each... */
-		if($emails) {
+		if ($emails) {
   
 			//puts oldest emails first
-			sort($emails);
+			// sort($emails);
 			
 			//testing
 			//rsort($emails);
@@ -163,19 +163,25 @@ class Fillups extends CI_Controller {
 			//loops through emails
 			foreach($emails as $email_number) {
 				
-				$message = imap_fetchbody($inbox, $email_number, "1.1");
-				if ($message == "") {
-					$message = imap_fetchbody($inbox, $email_number, "1");
-				}
-				$message = strip_tags(trim(substr(quoted_printable_decode($message), 0, 100)));
+				// $message = imap_fetchbody($inbox, $email_number, "1.1");
+				// if ($message == "") {
+				// 	$message = imap_fetchbody($inbox, $email_number, "1");
+				// }
+				// $message = strip_tags(trim(substr(quoted_printable_decode($message), 0, 100)));
 				
 				//print 'MESSAGE: ' . $message;
+				// $message = explode(' ', $message);
+
+        $message = explode(' ', trim(imap_fetchbody($inbox,$email_number,2)));
+        $values[$index]['mileage'] = strip_tags($message[0]);
+        $values[$index]['price'] = strip_tags($message[1]);
+        $values[$index]['gallons'] = strip_tags($message[2]);
+        
+        
 				
-				$message = explode(' ', $message);
-				
-				$values[$index]['mileage'] = $message[0];
-				$values[$index]['price'] = $message[1];
-				$values[$index]['gallons'] = $message[2];
+				// $values[$index]['mileage'] = $message[0];
+				// $values[$index]['price'] = $message[1];
+				// $values[$index]['gallons'] = $message[2];
 				if(isset($message[3])) {
 					$vehicle_name = $message[3];
 				}
@@ -194,6 +200,7 @@ class Fillups extends CI_Controller {
 				//find user id
 				$header = imap_headerinfo($inbox, $email_number);
 				$phone = strip_tags($header->from[0]->mailbox);
+        print_r($phone);
 				$query = $this->db->get_where('user', array('phone' => $phone));
 				$user = $query->row_array();
 				$values[$index]['user_ID'] = $user['ID'];
