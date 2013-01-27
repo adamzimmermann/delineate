@@ -21,6 +21,17 @@ function delineate_menu() {
     'access callback' => TRUE,
     'type' => MENU_CALLBACK,
   );
+  $items['imap'] = array(
+    'page callback' => 'delineate_imap',
+    'access callback' => TRUE,
+    'page arguments' => array('API'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['imap/update'] = array(
+    'page callback' => 'delineate_imap',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
   return $items;
 }
 
@@ -149,9 +160,9 @@ function delineate_calculate_fillup_fields(&$node) {
   if ($previous_fillup = delineate_fillup_previous_fillup($node)) {
 
     // Get the values needed for the calculations.
-    $mileage_previous = $previous_fillup->field_fillup_mileage['und'][0]['value'];
-    $mileage_current = $node->field_fillup_mileage['und'][0]['value'];
-    $gallons = $node->field_fillup_gallons['und'][0]['value'];
+    $mileage_previous = $previous_fillup->field_fillup_mileage[LANGUAGE_NONE][0]['value'];
+    $mileage_current = $node->field_fillup_mileage[LANGUAGE_NONE][0]['value'];
+    $gallons = $node->field_fillup_gallons[LANGUAGE_NONE][0]['value'];
 
     // Calculate miles since last fillup.
     $miles = $mileage_current - $mileage_previous;
@@ -163,15 +174,15 @@ function delineate_calculate_fillup_fields(&$node) {
     }
 
     // Calculate days since last fillup.
-    $date_current = new DateTime(date(DateTime::ISO8601 , $node->field_fillup_date['und'][0]['value']));
-    $date_previous = new DateTime(date(DateTime::ISO8601 , $previous_fillup->field_fillup_date['und'][0]['value']));
+    $date_current = new DateTime(date(DateTime::ISO8601 , $node->field_fillup_date[LANGUAGE_NONE][0]['value']));
+    $date_previous = new DateTime(date(DateTime::ISO8601 , $previous_fillup->field_fillup_date[LANGUAGE_NONE][0]['value']));
     $difference = $date_current->diff($date_previous);
     $days = $difference->d;
 
     // Assign the values.
-    $node->field_fillup_miles['und'][0]['value'] = $miles;
-    $node->field_fillup_mpg['und'][0]['value'] = $mpg;
-    $node->field_fillup_days['und'][0]['value'] = $days;
+    $node->field_fillup_miles[LANGUAGE_NONE][0]['value'] = $miles;
+    $node->field_fillup_mpg[LANGUAGE_NONE][0]['value'] = $mpg;
+    $node->field_fillup_days[LANGUAGE_NONE][0]['value'] = $days;
   } 
 }
 
@@ -438,85 +449,145 @@ function delineate_vehicle_previous_oilchange($node) {
 
 
 function delineate_cron() {
-/*
-  if (FALSE) {
-    dsm('custom cron function called');
+  // Check if there are any new Fillups and add them to the database if there are.
+  if ($fillups = delineate_imap()) {
+    foreach ($fillups as $fillup) {
+      // Create Fillup.
+      delineate_create_fillup($fillup);
+    }
+  }
+}
 
+
+// Checks for new Fillups and returns JSON or an array depending on the $source parameter.
+function delineate_imap($source = NULL) {
+
+  // Check the API for new Fillups.
+  if ($source == 'API') {
+    $error = 0;
+    $fillups = drupal_http_request('http://dev.adazimmermann.com/imap/update');
+    if (isset($fillups->data) && strlen($fillups->data)) {
+      if (!$fillups = json_decode($fillups)) {
+        $error++;
+      }
+    }
+    else {
+      $error++;
+    }
+    if ($error) {
+      watchdog('Delineate', 'The API did not return valid results.');
+      return FALSE;
+    }
+  }
+  // Check for emails using the IMAP protocol.
+  else {
     // Get email credentials.
-    include('delineate.creds.inc');
-
-    dsm('username: ' . $username);
-
+    require_once('delineate.creds.inc');
+    if (!isset($password)) {
+      watchdog('Delineate', 'Email settings were not imported successfully.', NULL, WATCHDOG_NOTICE);
+    }
     // Try to connect.
-    // $inbox = imap_open($hostname,$username,$password) or die('Cannot connect to Gmail: ' . imap_last_error());
+    $inbox = imap_open($hostname,$username,$password) or watchdog('Delineate', 'Cannot connect to Gmail: ' . imap_last_error());
 
-    // Get email.
-    $emails = imap_search($inbox,'ALL');
-
-    dsm($inbox);
-
-    // dsm('emails');
-    // dsm($emails);
-
-    // if emails are returned, cycle through each
-    if ($emails) {
+    // Find unread emails.
+    $emails = imap_search($inbox,'UNSEEN');
+    
+    // Check if new emails were found.
+    if (isset($emails) && count($emails)) {
       
-      //loops through emails
+      // Cycle though the emails.
       foreach($emails as $email_number) {
+
+        // Set the initial error condition.
+        $error = 0;
         
-        // Get mileage, price, and gallons
-        $message = explode(' ', trim(imap_fetchbody($inbox,$email_number,2)));
+        // Parse data from the message.
+        $delimiter = ' ';
+        do {
+          $message = delineate_email_parse($delimiter);
+          $delimiter += $delimiter;
+        } while (count($message) < 3 && strlen($delimiter) < 5);
+        if (count($message) < 3) {
+          watchdog('Delineate', 'The message could not be parsed into Mileage, Price, and Gallons');
+          $error++;
+        }
 
         dsm($message);
 
+        // Set mileage, price, and gallons
         $mileage = strip_tags($message[0]);
         $price = strip_tags($message[1]);
         $gallons = strip_tags($message[2]);
           
-        // Get time
+        // Get the date/time
         $overview = imap_fetch_overview($inbox,$email_number,0);
         $datetime = strtotime($overview[0]->date);
         $date = date('Y-m-d H:i:s', $datetime);
 
-        // Get sender information
+        // Get the sender information
         $header = imap_headerinfo($inbox, $email_number);
         $user = strip_tags($header->from[0]->mailbox);
         $sender = $header->senderaddress;
 
-        // dsm($header);
-
-        // Get uid.
+        // Try to find a user with the corresponding email address.
         $query = new EntityFieldQuery();
-
         $query->entityCondition('entity_type', 'user')
           // ->entityCondition('bundle', 'article')
-          // ->propertyCondition('status', 1)
-          // ->fieldCondition('field_news_types', 'value', 'spotlight', '=')
-          // ->fieldCondition('field_photo', 'fid', 'NULL', '!=')
-          // ->fieldCondition('field_faculty_tag', 'tid', $value)
-          // ->fieldCondition('field_news_publishdate', 'value', $year. '%', 'like')
-          // ->range(0, 1)
+          ->fieldCondition('field_user_phone', 'value', '$sender', '=')
           ->addMetaData('account', user_load(1)); // Run the query as user 1.
 
         $result = $query->execute();
         dsm($result);
 
-        if (isset($result['user'])) {
-          // $uids = array_keys($result['user']);
-          // $users = entity_load('node', $news_items_nids);
-          // $user = $users[0];
+        // Check if a user was found.
+        if (isset($result['user']) && count($result['user'] == 1)) {
+          $uid = array_pop(array_keys($result['user']));
+          dsm($uid);
+        }
+        else {
+          watchdog('Delineate', 'No user found with the email address: @sender', array('@sender'=>$sender));
+          $error++;
         }
 
-        // Save node.  
-        // node_save($node);
-
-        // Send email verification.
+        // Check if there were any errors.
+        if (!$error) {
+          // Create a Fillup array.
+          $fillup = array(
+            'mileage' => $mileage,
+            'date' => $date,
+            'gallons' => $gallons,
+            'price' => $price,
+            'vehicle' => $vehicle,
+            'uid' => $uid,
+          );
+          $fillups[] = $fillup;
+        }
+        // Send email verification
+        dsm('email verifcation being sent with the following information:');
+        dsm($fillup);
       }
+      // Dev code.
+      dsm('emails');
+      dsm($emails);
     }
-    // close the connection 
-    // imap_close($inbox);
   }
-*/
+
+
+
+  // Ensure that valid Fillups were found and parsed.
+  if (count($fillups)) {
+    if ($source == 'API') {
+      return json_encode($fillups);
+    }
+    else {
+      return $fillups;
+    }
+  }
+  // No valid Fillups were found and parsed successfully;
+  else {
+    watchdog('Delineate', 'No valid Fillups were found and parsed successfully');
+    return FALSE;
+  }
 }
 
 /*
@@ -535,3 +606,6 @@ function delineate_cron() {
 
 */
 
+function delineate_email_parse($delimiter) {
+  return explode($delimiter, trim(imap_fetchbody($inbox, $email_number, 2)));
+}
