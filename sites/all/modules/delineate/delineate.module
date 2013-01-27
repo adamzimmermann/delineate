@@ -502,9 +502,8 @@ function delineate_imap($source = NULL) {
         $error = 0;
         
         // Parse data from the message.
+        $delimiter = ' ';
         $message = delineate_email_parse($delimiter, $inbox, $email_number);
-        // $delimiter = ' ';
-        // $itteration = 0;
         // do {
         //   $message = delineate_email_parse($delimiter, $inbox, $email_number);
         //   $delimiter += $delimiter;
@@ -535,14 +534,14 @@ function delineate_imap($source = NULL) {
         $query = new EntityFieldQuery();
         $query->entityCondition('entity_type', 'user')
           // ->entityCondition('bundle', 'article')
-          ->fieldCondition('field_user_phone', 'value', '$sender', '=')
+          ->propertyCondition('field_user_phone', 'value', $sender, '=')
           ->addMetaData('account', user_load(1)); // Run the query as user 1.
 
         $result = $query->execute();
         dsm($result);
 
         // Check if a user was found.
-        if (isset($result['user']) && count($result['user'] == 1)) {
+        if (isset($result['user']) && count($result['user']) == 1) {
           $uid = array_pop(array_keys($result['user']));
           dsm($uid);
         }
