@@ -511,6 +511,7 @@ function delineate_imap($source = NULL) {
         if (count($message) < 3) {
           watchdog('Delineate', 'The message could not be parsed into Mileage, Price, and Gallons');
           $error++;
+          continue;
         }
 
         dsm($message);
@@ -528,7 +529,9 @@ function delineate_imap($source = NULL) {
         // Get the sender information
         $header = imap_headerinfo($inbox, $email_number);
         $user = strip_tags($header->from[0]->mailbox);
-        $sender = $header->senderaddress;
+        if (!$sender = $header->senderaddress) {
+          continue;
+        }
 
         // Try to find a user with the corresponding email address.
         $query = new EntityFieldQuery();
@@ -548,6 +551,7 @@ function delineate_imap($source = NULL) {
         else {
           watchdog('Delineate', 'No user found with the email address: @sender', array('@sender'=>$sender));
           $error++;
+          continue;
         }
 
         // Check if there were any errors.
