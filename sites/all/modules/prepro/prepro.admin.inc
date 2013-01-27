@@ -110,9 +110,17 @@ function prepro_admin_form($form_id, &$form_state) {
     ),
   );
 
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => 'Save Settings',
+  $form['buttons'] = array(
+    'submit' => array(
+      '#type' => 'submit',
+      '#value' => 'Save settings',
+      '#submit' => array('prepro_admin_form_save')
+    ),
+    'clear_cache' => array(
+      '#type' => 'submit',
+      '#value' => 'Clear prepro cache',
+      '#submit' => array('prepro_admin_form_cc')
+    ),
   );
 
   return $form;
@@ -140,9 +148,9 @@ function _prepro_admin_form_alter_name(&$array, $proc) {
 }
 
 /**
- * Submit handler for prepro admin form.
+ * Submit handler for "Save" on the prepro admin form.
  */
-function prepro_admin_form_submit($form, $form_state) {
+function prepro_admin_form_save($form, &$form_state) {
   $settings = _prepro_get_settings(array(
     'additional' => $form_state['input']['additional'],
     'filetypes' => $form_state['input']['filetypes'],
@@ -157,4 +165,24 @@ function prepro_admin_form_submit($form, $form_state) {
   }
   variable_set('prepro', $settings);
   drupal_set_message('Prepro settings have been saved');
+}
+
+/**
+ * Submit handler for clearing the cache from the prepro admin form
+ */
+function prepro_admin_form_cc($form, &$form_state) {
+  prepro_clear_cache();
+  drupal_set_message('The Prepro cache has been cleared');
+}
+
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function prepro_form_system_performance_settings_alter(&$form) {
+  $form['clear_cache']['prepro_clear'] = array(
+    '#type' => 'submit',
+    '#value' => 'Clear prepro cache',
+    '#submit' => array('prepro_admin_form_cc')
+  );
 }

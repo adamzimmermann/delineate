@@ -1,5 +1,7 @@
 <?php
 
+require_once 'prepro.admin.inc';
+
 /**
  * Implementation of hook_menu().
  */
@@ -104,7 +106,8 @@ function _prepro_process_assets($target_ext, &$items) {
     $path = ($file['recompile'] !== TRUE && isset($map[$hash])) ? $map[$hash] : NULL;
 
     # if $path doesn't exist it's easier to just unset than anything else
-    if (!file_exists($path)) {
+    if (!file_exists($path) || $additional['cache'] != 'cache') {
+      $file['recompile'] = true;
       unset ($path);
     }
 
@@ -115,7 +118,7 @@ function _prepro_process_assets($target_ext, &$items) {
     // AND
     //  - when we are in development mode
     //  - the file is specifically marked to be recompiled
-    if (!isset($path) && ($additional['cache'] != 'cache' || $file['recompile'] === TRUE)) {
+    if (!isset($path) && $file['recompile'] === TRUE) {
      # Print out a warning message if we're in devel mode, sporadically.
       if ($additional['cache'] != 'cache' && $settings['show_warnings']) {
         $message = t('Prepro - your @type files are being processed on every page load, this may cause slowdown on production servers. !link', array('@type' => strtoupper($target_ext), '!link' => l('Click here to change', 'admin/config/media/prepro/'. $target_ext)));
@@ -209,7 +212,7 @@ function _prepro_compile($file) {
 
   if (!$file['contents'] = file_get_contents($file['data'])) {
     watchdog('Prepro', 'Prepro could not find the file %file for compilation', array('%file' => $file['data']), WATCHDOG_ERROR);
-    continue;
+    return;
   }
 
   drupal_alter('prepro_precompile', $file['contents'], $file, $local);

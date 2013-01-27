@@ -3,7 +3,7 @@
 /**
  * Implements hook_menu.
  */
-function delineate_menu($items) {
+function delineate_menu() {
   $items['cron'] = array(
     'page callback' => 'delineate_cron',
     'access callback' => TRUE,
