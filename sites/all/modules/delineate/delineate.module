@@ -383,8 +383,8 @@ function delineate_field_formatter_prepare_view($entity_type, $entities, $field,
 
 function delineate_node_view($node, $view_mode, $langcode) {
 
-  dsm('in node_view');
-  dsm($node);
+  // dsm('in node_view');
+  // dsm($node);
 
   // Calculate time sensitive fields for vehicle nodes.
   if ($node->type == 'vehicle') {
@@ -490,7 +490,7 @@ function delineate_imap($source = NULL) {
     $inbox = imap_open($hostname,$username,$password) or watchdog('Delineate', 'Cannot connect to Gmail: ' . imap_last_error());
 
     // Find unread emails.
-    $emails = imap_search($inbox,'UNSEEN');
+    $emails = imap_search($inbox,'NEW');
     
     // Check if new emails were found.
     if (isset($emails) && count($emails)) {
@@ -575,12 +575,15 @@ function delineate_imap($source = NULL) {
       dsm('emails');
       dsm($emails);
     }
+    else {
+      watchdog('Delineate', 'No new emails found.');
+    }
   }
 
 
 
   // Ensure that valid Fillups were found and parsed.
-  if (count($fillups)) {
+  if (isset($fillups) && count($fillups)) {
     if ($source == 'API') {
       return json_encode($fillups);
     }
