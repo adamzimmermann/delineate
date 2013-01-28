@@ -22,7 +22,7 @@ function delineate_menu() {
     'type' => MENU_CALLBACK,
   );
   $items['imap'] = array(
-    'page callback' => 'delineate_imap',
+    'page callback' => 'delineate_check_email',
     'access callback' => TRUE,
     'type' => MENU_CALLBACK,
   );
@@ -238,7 +238,7 @@ function delineate_create_fillup($fillup) {
   $node->language = LANGUAGE_NONE;
   node_object_prepare($node);
 
-  dsm($node);
+  // dsm($node);
 
   $node->field_fillup_date['und'][0]['value'] = $fillup['date'];
 
@@ -273,8 +273,16 @@ function delineate_create_fillup($fillup) {
 
   // Save node
   // $node = node_submit($node);
-  dsm($node);
-  node_save($node);
+
+  $node = node_save($node);
+  if ($node->nid) {
+    dsm($node);
+    return $node;
+  }
+  else {
+    watchdog('Delineate', 'There was a problem creating a new fillup node.');
+    return FALSE;
+  }
 
 }
 
@@ -396,7 +404,7 @@ function delineate_node_view($node, $view_mode, $langcode) {
     if ($previous_fillup = delineate_vehicle_previous_fillup($node)) {
       
       // Find the current mileage.
-      $current_mileage = $previous_fillup->field_fillup_mileage['und'][0]['value'];
+      $current_mileage = $previous_fillup->field_fillup_mileage[LANGUAGE_NONE][0]['value'];
 
       // Calculate the average mpg for the vehicle.
       $average_mpg = delineate_vehicle_average_mpg($node);
@@ -445,17 +453,26 @@ function delineate_node_view($node, $view_mode, $langcode) {
 
 function delineate_vehicle_previous_oilchange($node) {
 
+
+}
+
+function delineate_check_email() {
+  $fillups = delineate_imap();
+  dsm($fillups);
+  if (is_array($fillups)) {
+    foreach ($fillups as $fillup) {
+      // Create Fillup.
+      delineate_create_fillup($fillup);
+    }
+    return 'Fillups added successfully.';
+  }
 }
 
 
 function delineate_cron() {
   // Check if there are any new Fillups and add them to the database if there are.
-  if ($fillups = delineate_imap()) {
-    foreach ($fillups as $fillup) {
-      // Create Fillup.
-      delineate_create_fillup($fillup);
-    }
-  }
+  delineate_check_email();
+
 }
 
 
@@ -484,16 +501,16 @@ function delineate_imap($source = NULL) {
     // Get email credentials.
     require_once('delineate.creds.inc');
     if (!isset($password)) {
-      watchdog('Delineate', 'Email settings were not imported successfully.', NULL, WATCHDOG_NOTICE);
+      watchdog('Delineate', 'Email settings were not imported successfully.');
     }
     // Try to connect.
     $inbox = imap_open($hostname,$username,$password) or watchdog('Delineate', 'Cannot connect to Gmail: ' . imap_last_error());
 
     // Find unread emails.
-    $emails = imap_search($inbox,'NEW');
+    $emails = imap_search($inbox,'UNSEEN');
     
     // Check if new emails were found.
-    if (isset($emails) && count($emails)) {
+    if (isset($emails) && is_array($emails)) {
       
       // Cycle though the emails.
       foreach($emails as $email_number) {
@@ -503,7 +520,20 @@ function delineate_imap($source = NULL) {
         
         // Parse data from the message.
         $delimiter = ' ';
-        $message = delineate_email_parse($delimiter, $inbox, $email_number);
+        // $message = delineate_email_parse($delimiter, $inbox, $email_number);
+
+        $message = imap_fetchbody($inbox, $email_number, 1.1);
+        if ($message == "") {
+          $message = imap_fetchbody($inbox, $email_number, 1);
+        }
+        if ($message == "") {
+          $message = imap_fetchbody($inbox, $email_number, 2);
+        }
+
+
+        $message = explode($delimiter, trim(strip_tags($message)));
+        // dsm($message);
+        // dsm(imap_fetchbody($inbox, $email_number, 2));
         // do {
         //   $message = delineate_email_parse($delimiter, $inbox, $email_number);
         //   $delimiter += $delimiter;
@@ -513,8 +543,6 @@ function delineate_imap($source = NULL) {
           $error++;
           continue;
         }
-
-        dsm($message);
 
         // Set mileage, price, and gallons
         $mileage = strip_tags($message[0]);
@@ -529,27 +557,27 @@ function delineate_imap($source = NULL) {
         // Get the sender information
         $header = imap_headerinfo($inbox, $email_number);
         $user = strip_tags($header->from[0]->mailbox);
-        if (!$sender = $header->senderaddress) {
+        $sender = strtolower($header->senderaddress);
+        // $sender = str_replace('@', '', $sender);
+        if (!$sender) {
           continue;
         }
 
         // Try to find a user with the corresponding email address.
         $query = new EntityFieldQuery();
         $query->entityCondition('entity_type', 'user')
-          // ->entityCondition('bundle', 'article')
-          ->propertyCondition('field_user_phone', 'value', $sender, '=')
-          ->addMetaData('account', user_load(1)); // Run the query as user 1.
-
+          ->fieldCondition('field_user_phone', 'value', $sender, '=')
+          ->addMetaData('account', user_load(1));
         $result = $query->execute();
-        dsm($result);
 
         // Check if a user was found.
         if (isset($result['user']) && count($result['user']) == 1) {
           $uid = array_pop(array_keys($result['user']));
-          dsm($uid);
+          $user = user_load($uid);
+          $vehicle = $user->field_user_vehicle[LANGUAGE_NONE][0]['target_id'];
         }
         else {
-          watchdog('Delineate', 'No user found with the email address: @sender', array('@sender'=>$sender));
+          watchdog('Delineate', 'No user found with the email address: @sender.', array('@sender'=>$sender));
           $error++;
           continue;
         }
@@ -568,32 +596,29 @@ function delineate_imap($source = NULL) {
           $fillups[] = $fillup;
         }
         // Send email verification
-        dsm('email verifcation being sent with the following information:');
+        // watchdog('Delineate', 'Email verifcation being sent with the following information:');
         dsm($fillup);
       }
-      // Dev code.
-      dsm('emails');
-      dsm($emails);
     }
     else {
       watchdog('Delineate', 'No new emails found.');
     }
   }
 
-
-
   // Ensure that valid Fillups were found and parsed.
   if (isset($fillups) && count($fillups)) {
+    watchdog('Delineate', '@count fillups were found and parsed successfully.', array('@count'=>count($fillups)));
     if ($source == 'API') {
       return json_encode($fillups);
     }
     else {
+      dsm($fillups);
       return $fillups;
     }
   }
-  // No valid Fillups were found and parsed successfully;
+  // No valid Fillups were found or none were parsed successfully.
   else {
-    watchdog('Delineate', 'No valid Fillups were found and parsed successfully');
+    watchdog('Delineate', 'No valid Fillups were found or none were parsed successfully');
     return FALSE;
   }
 }
@@ -615,5 +640,29 @@ function delineate_imap($source = NULL) {
 */
 
 function delineate_email_parse($delimiter, $inbox, $email_number) {
-  return explode($delimiter, trim(imap_fetchbody($inbox, $email_number, 2)));
+  $data = explode($delimiter, trim(imap_fetchbody($inbox, $email_number, 2)));
+  dsm($data);
+  return $data;
+}
+
+
+function delineate_user_vehicle($uid) {
+  $query = new EntityFieldQuery();
+
+  $query->entityCondition('entity_type', 'user')
+    ->entityCondition('bundle', 'article')
+    ->propertyCondition('status', 1)
+    ->fieldCondition('field_news_types', 'value', 'spotlight', '=')
+    ->fieldCondition('field_photo', 'fid', 'NULL', '!=')
+    ->fieldCondition('field_faculty_tag', 'tid', $value)
+    ->fieldCondition('field_news_publishdate', 'value', $year. '%', 'like')
+    ->range(0, 10)
+    ->addMetaData('account', user_load(1)); // Run the query as user 1.
+
+  $result = $query->execute();
+
+  if (isset($result['node'])) {
+    $news_items_nids = array_keys($result['node']);
+    $news_items = entity_load('node', $news_items_nids);
+  }
 }
