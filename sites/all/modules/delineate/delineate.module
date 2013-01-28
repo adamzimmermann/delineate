@@ -482,7 +482,7 @@ function delineate_imap($source = NULL) {
   // Check the API for new Fillups.
   if ($source == 'API') {
     $error = 0;
-    $fillups = drupal_http_request('http://dev.adazimmermann.com/imap/update');
+    $fillups = drupal_http_request('http://dev.adazimmermann.com/delineate/imap/update');
     if (isset($fillups->data) && strlen($fillups->data)) {
       if (!$fillups = json_decode($fillups)) {
         $error++;
